@@ -42,7 +42,7 @@ def handle_request(client_connection, client_address):
 			msg = client_address[0] + "：" + msg
 		response = senddata(usr,msg)
 	else :
-		response = "format : usr=xxxx&msg=123456&from=abc"
+		response = "format : usr=xxxx&msg=123456&from=abc<br/>Your request is : <br/><pre>" + request + "</pre>"
 	# 准备响应内容
 	http_response = f"""\
 HTTP/1.1 200 OK
