@@ -10,7 +10,7 @@ import threading
 import json
 import imghdr
 
-MAX_CONTENT_LENGTH = 1 * 1024 * 1024  # 限制最大上传文件大小为1MB
+MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 限制最大上传文件大小为1MB
 UPLOAD_DIR = '/tmp/html/'
 
 def parse_headers(header_data):
@@ -55,6 +55,40 @@ def save_file(file_data, filename):
 			f.write(file_data)
 		print(f"File saved: {file_path}")
 
+def extract_image(data):
+	"""
+	从二进制数据中提取 PNG 或 JPEG 图像。
+	
+	:param data: 二进制数据
+	:return: 提取的图像二进制数据（如果存在），否则返回 None
+	"""
+	# PNG 文件的标志
+	png_header = b'\x89PNG\r\n\x1a\n'
+	png_end = b'IEND\xaeB`\x82'
+
+	# JPEG 文件的标志
+	jpeg_header = b'\xff\xd8'
+	jpeg_end = b'\xff\xd9'
+
+	# 尝试提取 PNG 图像
+	png_start = data.find(png_header)
+	if png_start != -1:
+		png_end_idx = data.find(png_end, png_start)
+		if png_end_idx != -1:
+			png_end_idx += len(png_end)  # 包含结束标志
+			return data[png_start:png_end_idx]
+
+	# 尝试提取 JPEG 图像
+	jpeg_start = data.find(jpeg_header)
+	if jpeg_start != -1:
+		jpeg_end_idx = data.find(jpeg_end, jpeg_start)
+		if jpeg_end_idx != -1:
+			jpeg_end_idx += len(jpeg_end)  # 包含结束标志
+			return data[jpeg_start:jpeg_end_idx]
+
+	# 如果没有找到 PNG 或 JPEG 图像
+	return None
+
 def handle_request(client_connection):
 	#client_connection.settimeout(5)
 	try:
@@ -88,34 +122,45 @@ def handle_request(client_connection):
 
 		# 处理 POST 请求
 		elif method == "POST":
+		elif method == "POST":
 			#print("POST request=%s" % request)
 			# 确认 Content-Length
 			content_length = int(headers.get("content-length", 0))
 			if content_length > MAX_CONTENT_LENGTH:
 				response = "Error: Content-Length exceeds the maximum allowed size."
 			else:
+				# 如果header有content_length信息，则按content_length接收
+				if content_length > 0 :
+					while len(body) < content_length:
+						body += client_connection.recv(1024)
+				else :
+					while chunk:
+						chunk = client_connection.recv(1024)
+						body += chunk
 				# 根据 Content-Type 处理不同的 POST 数据格式
 				content_type = headers.get("content-type", "")
 				if "multipart/form-data" in content_type:
 					boundary = content_type.split("boundary=")[-1]
-					while len(body) < content_length:
-						body += client_connection.recv(1024)
 					form_data, file_data, file_name = handle_multipart_form_data(body, boundary)
-					#print("POST -F file= form=%s, file=%s" % (form_data, file_name))
-					usr = form_data.get("usr", [""])[0]
-					msg = form_data.get("msg", [""])[0]
-					source = form_data.get("from", [""])[0]
+					#if body :
+					#	print("POST body : %s" % body)
+					#if file_data :
+					#	print("-X POST -F file= form=%s, file=%s" % (form_data, file_name))
+					if not usr ：
+						usr = form_data.get("usr", [""])[0]
+					if not msg :
+						msg = form_data.get("msg", [""])[0]
+					if not source :
+						source = form_data.get("from", [""])[0]
 					#save_file(file_data, file_name)
 					response = f"POST received: usr={usr}, msg={msg}, from={source}, file={file_name}"
 					if file_data:
 						response += f", {len(file_data)} bytes"
 					image = file_data
 				elif content_type == "application/x-www-form-urlencoded":
-					while chunk:
-						chunk = client_connection.recv(1024)
-						body += chunk
-					body = body[5:-7]
-					#print("POST --post-file \theader=%s, \n\tbody=%s" % (header_data, body))
+					body = extract_image(body)
+					#if body :
+					#	print("POST --post-file \theader=%s, \n\tbody=%d" % (header_data, len(body)))
 					#form_data = parse_urlencoded(body)
 					#usr = form_data.get("usr", [""])[0]
 					#msg = form_data.get("msg", [""])[0]
