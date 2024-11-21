@@ -144,32 +144,34 @@ def handle_request(client_connection):
 					form_data, file_data, file_name = handle_multipart_form_data(body, boundary)
 					#if body :
 					#	print("POST body : %s" % body)
-					#if file_data :
-					#	print("-X POST -F file= form=%s, file=%s" % (form_data, file_name))
-					if not usr ：
+					if file_data :
+						print("-X POST -F file= form=%s, file=%s" % (form_data, file_name))
+					if not usr :
 						usr = form_data.get("usr", [""])[0]
 					if not msg :
 						msg = form_data.get("msg", [""])[0]
 					if not source :
 						source = form_data.get("from", [""])[0]
-					#save_file(file_data, file_name)
+					image = extract_image(file_data)
+					#save_file(image, file_name)
 					response = f"POST received: usr={usr}, msg={msg}, from={source}, file={file_name}"
-					if file_data:
-						response += f", {len(file_data)} bytes"
-					image = file_data
+					if image:
+						response += f", PIC {len(image)} bytes"
 				elif content_type == "application/x-www-form-urlencoded":
-					body = extract_image(body)
 					#if body :
 					#	print("POST --post-file \theader=%s, \n\tbody=%d" % (header_data, len(body)))
-					#form_data = parse_urlencoded(body)
-					#usr = form_data.get("usr", [""])[0]
-					#msg = form_data.get("msg", [""])[0]
-					#source = form_data.get("from", [""])[0]
-					#save_file(body, "uploaded_file.bin")
+					form_data = parse_urlencoded(body)
+					if not usr :
+						usr = form_data.get("usr", [""])[0]
+					if not msg :
+						msg = form_data.get("msg", [""])[0]
+					if not source :
+						source = form_data.get("from", [""])[0]
+					image = extract_image(body)
+					#save_file(image, "uploaded_file.bin")
 					response = f"POST received: usr={usr}, msg={msg}, from={source}, raw file saved."
-					if body :
-						response += f", {len(body)} bytes"
-					image = body
+					if image :
+						response += f", PIC {len(image)} bytes"
 				else:
 					response = "Error: Unsupported Content-Type."
 		else:
@@ -211,7 +213,11 @@ def wechat_udp(host='0.0.0.0',port=8001):
 					revc_msg['msg'] = revc_msg['from'] + "：" + revc_msg['msg']
 				else :
 					revc_msg['msg'] = remoteHost + "：" + revc_msg['msg']
-				senddata(revc_msg['usr'], revc_msg['msg'], None)
+				if 'image' in recv_msg:
+					image = extract_image(base64.b64decode(recv_msg['image']))
+				else :
+					image = None
+				senddata(revc_msg['usr'], revc_msg['msg'], image)
 				result = "R".encode("UTF-8")
 		except Exception as e :
 			print("%s wechat UDP error : %s" % (ctime(),e))
