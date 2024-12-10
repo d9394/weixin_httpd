@@ -89,8 +89,8 @@ def extract_image(data):
 	# 如果没有找到 PNG 或 JPEG 图像
 	return None
 
-def handle_request(client_connection):
-	#client_connection.settimeout(5)
+def handle_request(client_connection, client_address):
+	client_connection.settimeout(60)
 	try:
 		# 初始化请求接收
 		request = b""
@@ -122,7 +122,6 @@ def handle_request(client_connection):
 
 		# 处理 POST 请求
 		elif method == "POST":
-		elif method == "POST":
 			#print("POST request=%s" % request)
 			# 确认 Content-Length
 			content_length = int(headers.get("content-length", 0))
@@ -146,14 +145,14 @@ def handle_request(client_connection):
 					#	print("POST body : %s" % body)
 					if file_data :
 						print("-X POST -F file= form=%s, file=%s" % (form_data, file_name))
+						image = extract_image(file_data)
+						#save_file(image, file_name)
 					if not usr :
 						usr = form_data.get("usr", [""])[0]
 					if not msg :
 						msg = form_data.get("msg", [""])[0]
 					if not source :
 						source = form_data.get("from", [""])[0]
-					image = extract_image(file_data)
-					#save_file(image, file_name)
 					response = f"POST received: usr={usr}, msg={msg}, from={source}, file={file_name}"
 					if image:
 						response += f", PIC {len(image)} bytes"
@@ -167,8 +166,9 @@ def handle_request(client_connection):
 						msg = form_data.get("msg", [""])[0]
 					if not source :
 						source = form_data.get("from", [""])[0]
-					image = extract_image(body)
-					#save_file(image, "uploaded_file.bin")
+					if body :
+						image = extract_image(body)
+						#save_file(image, "uploaded_file.bin")
 					response = f"POST received: usr={usr}, msg={msg}, from={source}, raw file saved."
 					if image :
 						response += f", PIC {len(image)} bytes"
@@ -177,7 +177,7 @@ def handle_request(client_connection):
 		else:
 			response = "Error: Unsupported HTTP method."
 
-		if usr and msg:
+		if usr and (msg or image):
 			msg_content = f"{source if source else client_address[0]}: {msg}"
 			response = senddata(usr, msg_content, image)  # 确保senddata函数存在
 		else:
@@ -191,6 +191,9 @@ Content-Type: text/plain
 
 {response}
 """
+	except socket.timeout:
+		print("Request timed out")
+		http_response = "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\n\r\nRequest timed out."
 	except Exception as e:
 		print("Error handling request:", e)
 		http_response = f"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nServer error: {e}"
@@ -223,9 +226,9 @@ def wechat_udp(host='0.0.0.0',port=8001):
 			print("%s wechat UDP error : %s" % (ctime(),e))
 		mSocket.sendto(result,(remoteHost, remotePort))
 		
-def senddata(user,content, image):
+def senddata(user, content, image):
 	global access_token
-	send_url = 'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=' + access_token
+	response = ""
 	content = content.replace('\\\\r\\\\\n','').replace('\r\n','')
 	content = content.replace('\\\\n',chr(10)).replace('\\\\t',chr(7)).replace('\\\\"','"')
 	#print('%s user = %s, content = %s' % (ctime(),user, content))
@@ -235,32 +238,35 @@ def senddata(user,content, image):
 			send_values = {
 				"touser": user, # 用户ID
 				"msgtype": "image",
-				"agentid": "1",
+				"agentid": "5",
 				"image": {
 					"media_id": media_id
 				},
 				"safe": 0
 				}
+			response += str(send_to_wx(send_values))
 		else :
-			send_values = None
-			response = {media_id}
-	elif len(content) >= 1000 or 1 :
+			#send_values = None
+			response += str({media_id})
+	if len(content) > 0 :
 		send_values = {
 			"touser":user,	#企业号中的用户帐号，在zabbix用户Media中配置，如果配置不正常，将按部门发送。
 	#		"toparty":"1",	#企业号中的部门id
 			"msgtype":"text",  #企业号中的应用id，消息类型。
-			"agentid":"1",	#测试agentid:5 生产agentid:8
+			"agentid":"5",	#测试agentid:5 生产agentid:8
 			"text":{
 				"content":content,
 				},
 			"safe":"0"
 			}
+		response += str(send_to_wx(send_values))
+	'''
 	else :
 		send_values = {
 			"touser":user,	#企业号中的用户帐号，在zabbix用户Media中配置，如果配置不正常，将按部门发送。
 	#		"toparty":"1",	#企业号中的部门id
 			"msgtype":"textcard",  #企业号中的应用id，消息类型。
-			"agentid":"1",	#测试agentid:5 生产agentid:8
+			"agentid":5",	#测试agentid:5 生产agentid:8
 			"textcard":{
 				"title": "test",
 #				"content":content.encode('utf-8')
@@ -269,16 +275,24 @@ def senddata(user,content, image):
 				},
 			"safe":"0"
 			}
+	'''
+	return response
+
+def send_to_wx(send_values):
+	global access_token
+	send_url = 'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=' + access_token
 	if send_values :
 		send_data = json.dumps(send_values, ensure_ascii=False)
 		#send_data = urllib.parse.urlencode(send_values).encode('ascii')
 		print("%s Sending message=%s" % (ctime(),send_data))
 		try:
-			send_response = urllib.request.urlopen(send_url, send_data.encode('utf-8')).read()
+			send_response = urllib.request.urlopen(send_url, send_data.encode('utf-8'), timeout=60).read()
 			response = json.loads(send_response.decode('utf-8'))
 		except Exception as e:
 			response = {u'errmsg': e}
 			print("%s Send Error Response=%s" % (ctime(), response))
+	else :
+		response="Nothing to send"
 	return response
 
 def upload_image(access_token, image_data):
