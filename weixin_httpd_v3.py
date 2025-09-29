@@ -90,141 +90,136 @@ def extract_image(data):
 	return None
 
 def handle_request(client_connection, client_address):
-	client_connection.settimeout(60)
-	try:
-		# 初始化请求接收
-		request = b""
-		while b"\r\n\r\n" not in request:
-			chunk = client_connection.recv(1024)
-			if not chunk:
-				break
-			request += chunk
-		#print(f"Request length : {len(request)}")
-		# 拆分请求头和请求体
-		header_data, body = request.split(b"\r\n\r\n", 1)
-		header_lines = header_data.decode("utf-8").split("\r\n")
-		request_line = header_lines[0]
-		headers = parse_headers("\r\n".join(header_lines[1:]))
+    client_connection.settimeout(60)
+    try:
+        request = b""
+        while b"\r\n\r\n" not in request:
+            chunk = client_connection.recv(1024)
+            if not chunk:
+                break
+            request += chunk
 
-		# 解析请求行
-		method, path, _ = request_line.split()
-		parsed_url = urllib.parse.urlparse(path)
-		query_params = urllib.parse.parse_qs(parsed_url.query)
+        header_data, body = request.split(b"\r\n\r\n", 1)
+        header_lines = header_data.decode("utf-8").split("\r\n")
+        request_line = header_lines[0]
+        headers = parse_headers("\r\n".join(header_lines[1:]))
 
-		usr = query_params.get("usr", [""])[0]
-		msg = query_params.get("msg", [""])[0]
-		source = query_params.get("from", [""])[0]
-		image = None
+        method, path, _ = request_line.split()
+        parsed_url = urllib.parse.urlparse(path)
+        query_params = urllib.parse.parse_qs(parsed_url.query)
 
-		# 处理 GET 请求
-		if method == "GET":
-			response = f"GET received: usr={usr}, msg={msg}, from={source}"
+        usr = query_params.get("usr", [""])[0]
+        msg = query_params.get("msg", [""])[0]
+        source = query_params.get("from", [""])[0]
+        image = None
 
-		# 处理 POST 请求
-		elif method == "POST":
-			#print("POST request=%s" % request)
-			# 确认 Content-Length
-			content_length = int(headers.get("content-length", 0))
-			if content_length > MAX_CONTENT_LENGTH:
-				response = "Error: Content-Length exceeds the maximum allowed size."
-			else:
-				# 如果header有content_length信息，则按content_length接收
-				if content_length > 0 :
-					while len(body) < content_length:
-						body += client_connection.recv(1024)
-				else :
-					while chunk:
-						chunk = client_connection.recv(1024)
-						body += chunk
-				# 根据 Content-Type 处理不同的 POST 数据格式
-				content_type = headers.get("content-type", "")
-				if "multipart/form-data" in content_type:
-					boundary = content_type.split("boundary=")[-1]
-					form_data, file_data, file_name = handle_multipart_form_data(body, boundary)
-					#if body :
-					#	print("POST body : %s" % body)
-					if file_data :
-						print("-X POST -F file= form=%s, file=%s" % (form_data, file_name))
-						image = extract_image(file_data)
-						#save_file(image, file_name)
-					if not usr :
-						usr = form_data.get("usr", [""])[0]
-					if not msg :
-						msg = form_data.get("msg", [""])[0]
-					if not source :
-						source = form_data.get("from", [""])[0]
-					response = f"POST received: usr={usr}, msg={msg}, from={source}, file={file_name}"
-					if image:
-						response += f", PIC {len(image)} bytes"
-				elif content_type == "application/x-www-form-urlencoded":
-					#if body :
-					#	print("POST --post-file \theader=%s, \n\tbody=%d" % (header_data, len(body)))
-					form_data = parse_urlencoded(body)
-					if not usr :
-						usr = form_data.get("usr", [""])[0]
-					if not msg :
-						msg = form_data.get("msg", [""])[0]
-					if not source :
-						source = form_data.get("from", [""])[0]
-					if body :
-						image = extract_image(body)
-						#save_file(image, "uploaded_file.bin")
-					response = f"POST received: usr={usr}, msg={msg}, from={source}, raw file saved."
-					if image :
-						response += f", PIC {len(image)} bytes"
-				else:
-					response = "Error: Unsupported Content-Type."
-		else:
-			response = "Error: Unsupported HTTP method."
+        if method == "GET":
+            response = f"GET received: usr={usr}, msg={msg}, from={source}"
 
-		if usr and (msg or image):
-			msg_content = f"{source if source else client_address[0]}: {msg}"
-			response = senddata(usr, msg_content, image)  # 确保senddata函数存在
-		else:
-			print('Error request:\n%s' % request.decode())
-			response = "Format: usr=xxxx&msg=123456 <br/> Your request is: <pre>" + ', '.join(header_lines) + "</pre>"
-		
-		# 返回 HTTP 响应
-		http_response = f"""\
+        elif method == "POST":
+            content_length = int(headers.get("content-length", 0))
+            if content_length > MAX_CONTENT_LENGTH:
+                response = "Error: Content-Length exceeds the maximum allowed size."
+            else:
+                if content_length > 0:
+                    while len(body) < content_length:
+                        body += client_connection.recv(1024)
+                else:
+                    while chunk:
+                        chunk = client_connection.recv(1024)
+                        if not chunk:
+                            break
+                        body += chunk
+
+                content_type = headers.get("content-type", "")
+
+                # multipart/form-data
+                if "multipart/form-data" in content_type:
+                    boundary = content_type.split("boundary=")[-1]
+                    form_data, file_data, file_name = handle_multipart_form_data(body, boundary)
+                    if file_data:
+                        print("-X POST -F file= form=%s, file=%s" % (form_data, file_name))
+                        image = extract_image(file_data)
+                    if not usr:
+                        usr = form_data.get("usr", [""])[0]
+                    if not msg:
+                        msg = form_data.get("msg", [""])[0]
+                    if not source:
+                        source = form_data.get("from", [""])[0]
+                    response = f"POST received: usr={usr}, msg={msg}, from={source}, file={file_name}"
+                    if image:
+                        response += f", PIC {len(image)} bytes"
+
+                # application/x-www-form-urlencoded (+charset 兼容)
+                elif "application/x-www-form-urlencoded" in content_type:
+                    form_data = parse_urlencoded(body)
+                    if not usr:
+                        usr = form_data.get("usr", [""])[0]
+                    if not msg:
+                        msg = form_data.get("msg", [""])[0]
+                    if not source:
+                        source = form_data.get("from", [""])[0]
+                    if body:
+                        image = extract_image(body)
+                    response = f"POST received: usr={usr}, msg={msg}, from={source}, raw file saved."
+                    if image:
+                        response += f", PIC {len(image)} bytes"
+
+                else:
+                    response = "Error: Unsupported Content-Type."
+
+        else:
+            response = "Error: Unsupported HTTP method."
+
+        if usr and (msg or image):
+            msg_content = f"{source if source else client_address[0]}: {msg}"
+            response = senddata(usr, msg_content, image)
+        else:
+            print('Error request:\n%s' % request.decode())
+            response = "Format: usr=xxxx&msg=123456 <br/> Your request is: <pre>" + ', '.join(header_lines) + "</pre>"
+
+        http_response = f"""\
 HTTP/1.1 200 OK
 Content-Type: text/plain
 
 {response}
 """
-	except socket.timeout:
-		print("Request timed out")
-		http_response = "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\n\r\nRequest timed out."
-	except Exception as e:
-		print("Error handling request:", e)
-		http_response = f"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nServer error: {e}"
-	finally:
-		client_connection.sendall(http_response.encode())
-		client_connection.close()
 
-def wechat_udp(host='0.0.0.0',port=8001):
-	mSocket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-	mSocket.bind((host,port))
-	while True:
-		result = "Error, message format : usr=1111&msg=2222&from=3333".encode("UTF-8")
-		revcData, (remoteHost, remotePort) = mSocket.recvfrom(1024)
-		try:
-			query_string = revcData.decode("gb2312", errors='ignore')
-			revc_msg = {item.split('=')[0].lower(): item.split('=')[1] for item in query_string.split('&')}
-			print("%s UDP receive : %s" % (ctime(),revc_msg))
-			if revc_msg['usr'] != "" and revc_msg['msg'] != "" :
-				if 'from' in revc_msg:
-					revc_msg['msg'] = revc_msg['from'] + "：" + revc_msg['msg']
-				else :
-					revc_msg['msg'] = remoteHost + "：" + revc_msg['msg']
-				if 'image' in recv_msg:
-					image = extract_image(base64.b64decode(recv_msg['image']))
-				else :
-					image = None
-				senddata(revc_msg['usr'], revc_msg['msg'], image)
-				result = "R".encode("UTF-8")
-		except Exception as e :
-			print("%s wechat UDP error : %s" % (ctime(),e))
-		mSocket.sendto(result,(remoteHost, remotePort))
+    except socket.timeout:
+        print("Request timed out")
+        http_response = "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\n\r\nRequest timed out."
+    except Exception as e:
+        print("Error handling request:", e)
+        http_response = f"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nServer error: {e}"
+    finally:
+        client_connection.sendall(http_response.encode())
+        client_connection.close()
+
+
+def wechat_udp(host='0.0.0.0', port=8001):
+    mSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    mSocket.bind((host, port))
+    while True:
+        result = "Error, message format : usr=1111&msg=2222&from=3333".encode("UTF-8")
+        revcData, (remoteHost, remotePort) = mSocket.recvfrom(1024)
+        try:
+            query_string = revcData.decode("gb2312", errors='ignore')
+            revc_msg = {item.split('=')[0].lower(): item.split('=')[1] for item in query_string.split('&')}
+            print("%s UDP receive : %s" % (ctime(), revc_msg))
+            if revc_msg.get('usr') and revc_msg.get('msg'):
+                if 'from' in revc_msg:
+                    revc_msg['msg'] = revc_msg['from'] + "：" + revc_msg['msg']
+                else:
+                    revc_msg['msg'] = remoteHost + "：" + revc_msg['msg']
+                if 'image' in revc_msg:
+                    image = extract_image(base64.b64decode(revc_msg['image']))
+                else:
+                    image = None
+                senddata(revc_msg['usr'], revc_msg['msg'], image)
+                result = "R".encode("UTF-8")
+        except Exception as e:
+            print("%s wechat UDP error : %s" % (ctime(), e))
+        mSocket.sendto(result, (remoteHost, remotePort))
 		
 def senddata(user, content, image):
 	global access_token
