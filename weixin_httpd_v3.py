@@ -247,16 +247,32 @@ def senddata(user, content, image):
             response += str({media_id})
     if len(content) > 0 :
         send_values = {
-            "touser":user,    #企业号中的用户帐号
+            "touser":user,    #企业号中的用户帐号，在zabbix用户Media中配置，如果配置不正常，将按部门发送。
     #        "toparty":"1",    #企业号中的部门id
             "msgtype":"text",  #企业号中的应用id，消息类型。
-            "agentid":"1000003",    
+            "agentid":"1000003",    #测试agentid:5 生产agentid:8
             "text":{
                 "content":content,
                 },
             "safe":"0"
             }
         response += str(send_to_wx(send_values))
+    '''
+    else :
+        send_values = {
+            "touser":user,    #企业号中的用户帐号，在zabbix用户Media中配置，如果配置不正常，将按部门发送。
+    #        "toparty":"1",    #企业号中的部门id
+            "msgtype":"textcard",  #企业号中的应用id，消息类型。
+            "agentid":"1000003",    #测试agentid:5 生产agentid:8
+            "textcard":{
+                "title": "test",
+#                "content":content.encode('utf-8')
+                "description" : content,
+                "url": "http://test.com/"
+                },
+            "safe":"0"
+            }
+    '''
     return response
 
 def send_to_wx(send_values):
@@ -328,7 +344,7 @@ def wx_token() :
         get_token()
         sleep(1800)
 
-def get_token(corpid="wx1234567890",corpsecret="1111111111111111111111111111111111111111"):
+def get_token(corpid="wx123456789",corpsecret="111111111111111111111111111111"):
     global access_token
     gettoken_url = 'https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=' + corpid + '&corpsecret=' + corpsecret
     try:
